@@ -1,9 +1,11 @@
 import tensorflow as tf
+import tensorflow.compat.v1 as v1
 import numpy as np
 import argparse
 import socket
 import importlib
 import time
+import imageio
 import os
 import scipy.misc
 import sys
@@ -36,17 +38,19 @@ if not os.path.exists(DUMP_DIR): os.mkdir(DUMP_DIR)
 LOG_FOUT = open(os.path.join(DUMP_DIR, 'log_evaluate.txt'), 'w')
 LOG_FOUT.write(str(FLAGS)+'\n')
 
-NUM_CLASSES = 40
+NUM_CLASSES = 6
 SHAPE_NAMES = [line.rstrip() for line in \
-    open(os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/shape_names.txt'))] 
+    open(os.path.join(BASE_DIR, 'data/off/hdf5_2048/shape_names.txt'))]
 
 HOSTNAME = socket.gethostname()
 
 # ModelNet40 official train/test split
 TRAIN_FILES = provider.getDataFiles( \
-    os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/train_files.txt'))
-TEST_FILES = provider.getDataFiles(\
-    os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/test_files.txt'))
+    # os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/train_files.txt'))
+    os.path.join(BASE_DIR, 'data/off/hdf5_2048/train_files.txt'))
+TEST_FILES = provider.getDataFiles( \
+    # os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/test_files.txt'))
+    os.path.join(BASE_DIR, 'data/off/hdf5_2048/test_files.txt'))
 
 def log_string(out_str):
     LOG_FOUT.write(out_str+'\n')
@@ -58,21 +62,21 @@ def evaluate(num_votes):
      
     with tf.device('/gpu:'+str(GPU_INDEX)):
         pointclouds_pl, labels_pl = MODEL.placeholder_inputs(BATCH_SIZE, NUM_POINT)
-        is_training_pl = tf.placeholder(tf.bool, shape=())
+        is_training_pl = v1.placeholder(tf.bool, shape=())
 
         # simple model
         pred, end_points = MODEL.get_model(pointclouds_pl, is_training_pl)
         loss = MODEL.get_loss(pred, labels_pl, end_points)
         
         # Add ops to save and restore all the variables.
-        saver = tf.train.Saver()
+        saver = v1.train.Saver()
         
     # Create a session
-    config = tf.ConfigProto()
+    config = v1.ConfigProto()
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     config.log_device_placement = True
-    sess = tf.Session(config=config)
+    sess = v1.Session(config=config)
 
     # Restore variables from disk.
     saver.restore(sess, MODEL_PATH)
@@ -141,25 +145,31 @@ def eval_one_epoch(sess, ops, num_votes=1, topk=1):
             loss_sum += batch_loss_sum
 
             for i in range(start_idx, end_idx):
+                print("start_idx",start_idx,"end_idx",end_idx)
                 l = current_label[i]
+                print("l",l)
                 total_seen_class[l] += 1
+                print("total_seen_class",total_seen_class)
                 total_correct_class[l] += (pred_val[i-start_idx] == l)
                 fout.write('%d, %d\n' % (pred_val[i-start_idx], l))
-                
+                print(pred_val[i-start_idx])
                 if pred_val[i-start_idx] != l and FLAGS.visu: # ERROR CASE, DUMP!
                     img_filename = '%d_label_%s_pred_%s.jpg' % (error_cnt, SHAPE_NAMES[l],
                                                            SHAPE_NAMES[pred_val[i-start_idx]])
                     img_filename = os.path.join(DUMP_DIR, img_filename)
                     output_img = pc_util.point_cloud_three_views(np.squeeze(current_data[i, :, :]))
-                    scipy.misc.imsave(img_filename, output_img)
+                    print(type(output_img))
+                    #scipy.misc.imsave(img_filename, output_img)
+                    imageio.imwrite(img_filename, output_img)
                     error_cnt += 1
                 
     log_string('eval mean loss: %f' % (loss_sum / float(total_seen)))
     log_string('eval accuracy: %f' % (total_correct / float(total_seen)))
-    log_string('eval avg class acc: %f' % (np.mean(np.array(total_correct_class)/np.array(total_seen_class,dtype=np.float))))
-    
-    class_accuracies = np.array(total_correct_class)/np.array(total_seen_class,dtype=np.float)
+    log_string('eval avg class acc: %f' % (np.mean(np.array(total_correct_class)/np.array(total_seen_class,dtype=np.double))))
+    print("total_correct_class",total_correct_class)
+    class_accuracies = np.array(total_correct_class)/np.array(total_seen_class,dtype=np.double)
     for i, name in enumerate(SHAPE_NAMES):
+        print("i",i,"class_accuracies[i]", class_accuracies[i])
         log_string('%10s:\t%0.3f' % (name, class_accuracies[i]))
     
 

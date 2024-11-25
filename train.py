@@ -12,14 +12,16 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'models'))
 sys.path.append(os.path.join(BASE_DIR, 'utils'))
 import provider
+import tensorflow.compat.v1 as v1
 import tf_util
+import off2hdf5
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
 parser.add_argument('--model', default='pointnet_cls', help='Model name: pointnet_cls or pointnet_cls_basic [default: pointnet_cls]')
 parser.add_argument('--log_dir', default='log', help='Log dir [default: log]')
-parser.add_argument('--num_point', type=int, default=1024, help='Point Number [256/512/1024/2048] [default: 1024]')
-parser.add_argument('--max_epoch', type=int, default=250, help='Epoch to run [default: 250]')
+parser.add_argument('--num_point', type=int, default=2048, help='Point Number [256/512/1024/2048] [default: 1024]')
+parser.add_argument('--max_epoch', type=int, default=1000, help='Epoch to run [default: 250]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
@@ -49,7 +51,7 @@ LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
 LOG_FOUT.write(str(FLAGS)+'\n')
 
 MAX_NUM_POINT = 2048
-NUM_CLASSES = 40
+NUM_CLASSES = 6
 
 BN_INIT_DECAY = 0.5
 BN_DECAY_DECAY_RATE = 0.5
@@ -60,9 +62,13 @@ HOSTNAME = socket.gethostname()
 
 # ModelNet40 official train/test split
 TRAIN_FILES = provider.getDataFiles( \
-    os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/train_files.txt'))
+    #os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/train_files.txt'))
+    os.path.join(BASE_DIR, 'data/off/hdf5_2048/train_files.txt'))
+    #os.path.join(BASE_DIR, 'data/off/hdf5/train_files.txt'))
 TEST_FILES = provider.getDataFiles(\
-    os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/test_files.txt'))
+    #os.path.join(BASE_DIR, 'data/modelnet40_ply_hdf5_2048/test_files.txt'))
+    os.path.join(BASE_DIR, 'data/off/hdf5_2048/test_files.txt'))
+    #os.path.join(BASE_DIR, 'data/off/hdf5/test_files.txt'))
 
 def log_string(out_str):
     LOG_FOUT.write(out_str+'\n')
@@ -71,7 +77,7 @@ def log_string(out_str):
 
 
 def get_learning_rate(batch):
-    learning_rate = tf.train.exponential_decay(
+    learning_rate = v1.train.exponential_decay(
                         BASE_LEARNING_RATE,  # Base learning rate.
                         batch * BATCH_SIZE,  # Current index into the dataset.
                         DECAY_STEP,          # Decay step.
@@ -81,7 +87,7 @@ def get_learning_rate(batch):
     return learning_rate        
 
 def get_bn_decay(batch):
-    bn_momentum = tf.train.exponential_decay(
+    bn_momentum = v1.train.exponential_decay(
                       BN_INIT_DECAY,
                       batch*BATCH_SIZE,
                       BN_DECAY_DECAY_STEP,
@@ -94,7 +100,7 @@ def train():
     with tf.Graph().as_default():
         with tf.device('/gpu:'+str(GPU_INDEX)):
             pointclouds_pl, labels_pl = MODEL.placeholder_inputs(BATCH_SIZE, NUM_POINT)
-            is_training_pl = tf.placeholder(tf.bool, shape=())
+            is_training_pl = v1.placeholder(tf.bool, shape=())
             print(is_training_pl)
             
             # Note the global_step=batch parameter to minimize. 
@@ -108,7 +114,7 @@ def train():
             loss = MODEL.get_loss(pred, labels_pl, end_points)
             tf.summary.scalar('loss', loss)
 
-            correct = tf.equal(tf.argmax(pred, 1), tf.to_int64(labels_pl))
+            correct = tf.equal(tf.argmax(pred, 1), v1.to_int64(labels_pl))
             accuracy = tf.reduce_sum(tf.cast(correct, tf.float32)) / float(BATCH_SIZE)
             tf.summary.scalar('accuracy', accuracy)
 
@@ -118,28 +124,28 @@ def train():
             if OPTIMIZER == 'momentum':
                 optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=MOMENTUM)
             elif OPTIMIZER == 'adam':
-                optimizer = tf.train.AdamOptimizer(learning_rate)
+                optimizer = v1.train.AdamOptimizer(learning_rate)
             train_op = optimizer.minimize(loss, global_step=batch)
             
             # Add ops to save and restore all the variables.
-            saver = tf.train.Saver()
+            saver = v1.train.Saver()
             
         # Create a session
-        config = tf.ConfigProto()
+        config = v1.ConfigProto()
         config.gpu_options.allow_growth = True
         config.allow_soft_placement = True
         config.log_device_placement = False
-        sess = tf.Session(config=config)
+        sess = v1.Session(config=config)
 
         # Add summary writers
         #merged = tf.merge_all_summaries()
-        merged = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'train'),
+        merged = v1.summary.merge_all()
+        train_writer = v1.summary.FileWriter(os.path.join(LOG_DIR, 'train'),
                                   sess.graph)
-        test_writer = tf.summary.FileWriter(os.path.join(LOG_DIR, 'test'))
+        test_writer = v1.summary.FileWriter(os.path.join(LOG_DIR, 'test'))
 
         # Init variables
-        init = tf.global_variables_initializer()
+        init = v1.global_variables_initializer()
         # To fix the bug introduced in TF 0.12.1 as in
         # http://stackoverflow.com/questions/41543774/invalidargumenterror-for-tensor-bool-tensorflow-0-12-1
         #sess.run(init)
@@ -221,20 +227,23 @@ def eval_one_epoch(sess, ops, test_writer):
     loss_sum = 0
     total_seen_class = [0 for _ in range(NUM_CLASSES)]
     total_correct_class = [0 for _ in range(NUM_CLASSES)]
+    print("total_seen_class",total_seen_class,"total_correct_class", total_correct_class )
     
     for fn in range(len(TEST_FILES)):
         log_string('----' + str(fn) + '-----')
         current_data, current_label = provider.loadDataFile(TEST_FILES[fn])
         current_data = current_data[:,0:NUM_POINT,:]
         current_label = np.squeeze(current_label)
+        print(current_label)
         
         file_size = current_data.shape[0]
         num_batches = file_size // BATCH_SIZE
+        print('file_size',file_size, 'num_batches',num_batches)
         
         for batch_idx in range(num_batches):
             start_idx = batch_idx * BATCH_SIZE
             end_idx = (batch_idx+1) * BATCH_SIZE
-
+            print("start_idx",start_idx, "end_idx",end_idx)
             feed_dict = {ops['pointclouds_pl']: current_data[start_idx:end_idx, :, :],
                          ops['labels_pl']: current_label[start_idx:end_idx],
                          ops['is_training_pl']: is_training}
@@ -242,17 +251,19 @@ def eval_one_epoch(sess, ops, test_writer):
                 ops['loss'], ops['pred']], feed_dict=feed_dict)
             pred_val = np.argmax(pred_val, 1)
             correct = np.sum(pred_val == current_label[start_idx:end_idx])
+            print("correct:", correct)
             total_correct += correct
             total_seen += BATCH_SIZE
             loss_sum += (loss_val*BATCH_SIZE)
             for i in range(start_idx, end_idx):
                 l = current_label[i]
                 total_seen_class[l] += 1
+                #print("total_seen_class", total_seen_class)
                 total_correct_class[l] += (pred_val[i-start_idx] == l)
             
     log_string('eval mean loss: %f' % (loss_sum / float(total_seen)))
     log_string('eval accuracy: %f'% (total_correct / float(total_seen)))
-    log_string('eval avg class acc: %f' % (np.mean(np.array(total_correct_class)/np.array(total_seen_class,dtype=np.float))))
+    log_string('eval avg class acc: %f' % (np.mean(np.array(total_correct_class)/np.array(total_seen_class,dtype=np.double))))
          
 
 

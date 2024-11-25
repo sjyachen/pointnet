@@ -7,10 +7,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../utils'))
 import tf_util
+import tensorflow.compat.v1 as v1
 
 def placeholder_inputs(batch_size, num_point):
-    pointclouds_pl = tf.placeholder(tf.float32, shape=(batch_size, num_point, 3))
-    labels_pl = tf.placeholder(tf.int32, shape=(batch_size))
+    pointclouds_pl = v1.placeholder(tf.float32, shape=(batch_size, num_point, 3))
+    labels_pl = v1.placeholder(tf.int32, shape=(batch_size))
     return pointclouds_pl, labels_pl
 
 
@@ -55,7 +56,7 @@ def get_model(point_cloud, is_training, bn_decay=None):
                                   scope='fc2', bn_decay=bn_decay)
     net = tf_util.dropout(net, keep_prob=0.7, is_training=is_training,
                           scope='dp1')
-    net = tf_util.fully_connected(net, 40, activation_fn=None, scope='fc3')
+    net = tf_util.fully_connected(net, 5, activation_fn=None, scope='fc3')
 
     return net, end_points
 

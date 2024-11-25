@@ -76,8 +76,8 @@ def save_h5_data_label_normal(h5_filename, data, label, normal,
 
 
 # Write numpy array data and label to h5_filename
-def save_h5(h5_filename, data, label, data_dtype='uint8', label_dtype='uint8'):
-    h5_fout = h5py.File(h5_filename)
+def save_h5(h5_filename, data, label, data_dtype='float32', label_dtype='uint8'):
+    h5_fout = h5py.File(h5_filename,'w')
     h5_fout.create_dataset(
             'data', data=data,
             compression='gzip', compression_opts=4,
